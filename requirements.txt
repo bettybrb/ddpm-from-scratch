@@ -1,0 +1,6 @@
+torch
+numpy
+Pillow
+tqdm
+diffusers==0.12.1
+huggingface_hub==0.20.3
