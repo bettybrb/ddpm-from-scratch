@@ -1,110 +1,114 @@
-# DDPM from Scratch
+# DDPM Scheduler from Scratch
 
-A PyTorch implementation exploring the mathematical foundations of Denoising Diffusion Probabilistic Models (DDPMs), including forward noise addition and reverse diffusion sampling.
+### Implementing the diffusion equations directly and validating them with a pretrained noise-prediction network
 
-The project implements custom diffusion schedulers and uses a pretrained U-Net to reconstruct images progressively from Gaussian noise.
+A PyTorch project exploring the mechanics of **Denoising Diffusion Probabilistic Models (DDPMs)** by implementing the forward-noising and reverse-sampling schedulers directly from the underlying equations.
 
-## Project Overview
+The neural noise predictor itself is not trained from scratch: the reconstruction experiment uses the pretrained Hugging Face **`google/ddpm-church-256` U-Net**. The custom contribution is the diffusion scheduling logic around that model.
 
-Diffusion models generate data by learning to reverse a gradual noising process. This project implements the core DDPM scheduling equations directly rather than treating the diffusion scheduler as a black box.
+## What I implemented
 
-The implementation covers both directions of the diffusion process:
+- forward diffusion / q-sampling;
+- linear beta and alpha schedules;
+- cumulative alpha products;
+- timestep-dependent Gaussian noise addition;
+- reverse diffusion / p-sampling;
+- posterior variance calculation;
+- clean-sample reconstruction from predicted noise;
+- posterior mean coefficients;
+- stochastic previous-sample generation;
+- iterative denoising over 1,000 timesteps;
+- comparison with Hugging Face Diffusers `DDPMScheduler`.
 
-- forward diffusion (`q`) - progressively adding Gaussian noise to an image
-- reverse diffusion (`p`) - progressively estimating and removing noise to reconstruct an image
+## Forward diffusion
 
-The custom reverse scheduler is compared against the scheduler provided by Hugging Face Diffusers.
+The custom `CustomDDPMScheduler_q` implements the DDPM forward process:
 
-## Forward Diffusion
+```text
+x_0 -> x_1 -> x_2 -> ... -> x_T
+```
 
-`CustomDDPMScheduler_q` implements the forward diffusion process.
+For an arbitrary timestep, the scheduler combines the original sample with Gaussian noise using the cumulative alpha schedule.
 
-For a selected timestep, cumulative alpha values from the noise schedule are used to combine the original sample with Gaussian noise, producing the corresponding noisy sample `x_t`.
+The implementation computes:
 
-The implementation includes calculations for:
+- `alpha_t = 1 - beta_t`;
+- cumulative alpha products;
+- `sqrt(alpha_bar_t)`;
+- `sqrt(1 - alpha_bar_t)`;
+- the noisy sample `x_t`.
 
-- the cumulative alpha schedule
-- `sqrt(alpha_bar_t)`
-- `sqrt(1 - alpha_bar_t)`
-- timestep-dependent Gaussian noise addition
+## Reverse diffusion
 
-## Reverse Diffusion
+The custom `CustomDDPMScheduler_p` implements the reverse update used to move from `x_t` toward `x_{t-1}`.
 
-`CustomDDPMScheduler_p` implements DDPM reverse sampling.
+At each of the 1,000 reverse timesteps:
 
-At each timestep, a pretrained U-Net predicts the noise contained in the current sample. The scheduler then estimates the original clean sample and calculates the distribution for the previous timestep.
+1. the pretrained U-Net predicts the noise residual;
+2. the scheduler estimates the original clean sample;
+3. posterior mean coefficients are calculated;
+4. the previous sample is estimated;
+5. stochastic variance noise is added where required.
 
-The reverse process implements:
+```text
+Gaussian noise
+      ↓
+pretrained U-Net predicts ε
+      ↓
+custom DDPM scheduler step
+      ↓
+x_t -> x_(t-1)
+      ↓
+repeat for 1,000 timesteps
+      ↓
+reconstructed image
+```
 
-- posterior variance calculation
-- alpha and beta schedule calculations
-- prediction of the original clean sample
-- posterior mean coefficients
-- prediction of the previous sample
-- stochastic variance noise
-- iterative denoising across 1,000 timesteps
+## Reference implementation comparison
 
-## Pretrained U-Net
+The same noisy starting sample is also reconstructed using Hugging Face Diffusers `DDPMScheduler`.
 
-The reconstruction experiment uses the Hugging Face `google/ddpm-church-256` pretrained diffusion model.
+This provides a direct reference pipeline for visually comparing the custom reverse-diffusion implementation with a library scheduler while using the same pretrained U-Net.
 
-The U-Net predicts the noise residual at each timestep while the custom scheduler performs the mathematical reverse-diffusion update.
+## Pretrained model
 
-## Validation
+The experiment uses:
 
-The notebook also performs the reconstruction using Hugging Face Diffusers' built-in `DDPMScheduler`.
+```text
+google/ddpm-church-256
+```
 
-This provides a reference implementation against which the custom reverse scheduler can be compared.
+Its U-Net performs the learned noise prediction. This repository focuses on implementing and understanding the **probabilistic scheduling equations**, rather than training the image-generation network itself.
 
 ## DDPM vs DDIM
 
-The accompanying investigation also explores the conceptual difference between DDPM and DDIM sampling.
+The notebook also discusses the difference between DDPM and DDIM sampling.
 
-DDPM uses a stochastic Markovian reverse process and normally traverses the diffusion schedule sequentially. DDIM can use a deterministic non-Markovian trajectory and skip timesteps, enabling substantially faster sampling.
+DDPM uses a stochastic reverse process and normally traverses the full diffusion schedule. DDIM can follow a deterministic trajectory and skip timesteps, enabling faster inference.
 
-## Repository Structure
+## Repository structure
 
-- `ddpm_from_scratch.ipynb` - forward and reverse DDPM scheduler implementation and reconstruction experiment
-- `requirements.txt` - Python dependencies
-- `.gitignore` - generated samples, datasets and local environment files
+```text
+ddpm-from-scratch/
+├── ddpm_from_scratch.ipynb
+├── requirements.txt
+└── README.md
+```
 
-## Requirements
+## Reproducibility
 
-The experiment requires a CUDA-capable environment because the original implementation places the model and diffusion tensors on CUDA.
+The original forward-noising experiment uses an input `tensor.npy` file that is not distributed in the repository.
 
-An input `tensor.npy` sample is also required to reproduce the original forward-noising experiment. This coursework-provided input is not included in the repository.
-
-The pretrained U-Net is downloaded automatically from Hugging Face when the notebook is executed.
+The pretrained U-Net is downloaded automatically from Hugging Face when the notebook runs. The original implementation assumes a CUDA-capable environment.
 
 ## Installation
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Technologies
+## Tech
 
-- Python
-- PyTorch
-- Hugging Face Diffusers
-- NumPy
-- Pillow
-- CUDA
-
-## Concepts Demonstrated
-
-- Denoising Diffusion Probabilistic Models
-- Forward diffusion
-- Reverse diffusion
-- Gaussian noise schedules
-- U-Net noise prediction
-- Markov chains
-- Probabilistic sampling
-- DDPM scheduling equations
-- DDPM vs DDIM sampling
-- PyTorch tensor operations
-- Generative deep learning
-
-## Motivation
-
-Modern diffusion libraries make image generation accessible through high-level APIs, but those APIs can hide the probabilistic process responsible for generation. This project implements the DDPM scheduling equations directly and uses them with a pretrained neural network, providing a practical view of how an image is transformed from noise into a structured sample one timestep at a time.
+**Python · PyTorch · Hugging Face Diffusers · DDPM · diffusion models · probabilistic sampling · CUDA · NumPy**
